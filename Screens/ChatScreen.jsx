@@ -1,9 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, FlatList, Button, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, FlatList, Button, TouchableOpacity, StyleSheet } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { BlobServiceClient } from '@azure/storage-blob';
-
-const AZURE_STORAGE_CONNECTION_STRING = '<TU_CONEXION_AZURE_STORAGE>'; // Pon aquí tu cadena de conexión
 
 const ChatScreen = ({ route }) => {
   const { user } = route.params;
@@ -12,9 +9,9 @@ const ChatScreen = ({ route }) => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
+    // Simular carga de destinatarios
     setRecipients([
       'user1@example.com',
       'user2@example.com',
@@ -25,73 +22,19 @@ const ChatScreen = ({ route }) => {
     ]);
   }, []);
 
-  // Función para subir archivo a Azure Blob Storage
-  const uploadFileToAzure = async (file) => {
-    try {
-      setUploading(true);
-
-      // Crear cliente del servicio
-      const blobServiceClient = BlobServiceClient.fromConnectionString(AZURE_STORAGE_CONNECTION_STRING);
-
-      // Nombre del contenedor (debe existir en tu cuenta)
-      const containerName = 'chat-files';
-      const containerClient = blobServiceClient.getContainerClient(containerName);
-
-      // Nombre del blob (archivo)
-      const blobName = `${Date.now()}-${file.name}`;
-
-      // Crear blockBlobClient
-      const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-
-      // Obtener datos del archivo
-      const response = await fetch(file.uri);
-      const fileBlob = await response.blob();
-
-      // Subir blob
-      await blockBlobClient.uploadData(fileBlob, {
-        blobHTTPHeaders: { blobContentType: file.mimeType || 'application/octet-stream' },
-      });
-
-      setUploading(false);
-      // URL pública o SAS según configuración de contenedor
-      const url = blockBlobClient.url;
-      return url;
-    } catch (error) {
-      setUploading(false);
-      Alert.alert('Error', 'No se pudo subir el archivo: ' + error.message);
-      throw error;
-    }
-  };
-
   const handleSendMessage = async () => {
-    if (!selectedRecipient) {
-      Alert.alert('Error', 'Selecciona un destinatario');
-      return;
-    }
-    if (!message && !file) {
-      Alert.alert('Error', 'Escribe un mensaje o adjunta un archivo');
-      return;
-    }
-
-    let fileUrl = null;
-    if (file) {
-      try {
-        fileUrl = await uploadFileToAzure(file);
-      } catch (error) {
-        return; // Ya se mostró error en uploadFileToAzure
-      }
-    }
+    if (!selectedRecipient || !message) return;
 
     const msg = {
       id: Date.now().toString(),
       from: user.email,
       to: selectedRecipient,
       content: message,
-      file: fileUrl,
+      file: file ? file.name : null,
       timestamp: new Date().toISOString(),
     };
 
-    // Aquí enviarías msg a tu backend (API + Azure Queue)
+    // Aquí enviarías el mensaje a tu backend (API + Azure Queue)
     console.log('Enviando mensaje:', msg);
 
     setMessages((prev) => [...prev, msg]);
@@ -130,17 +73,9 @@ const ChatScreen = ({ route }) => {
           data={messages.filter((m) => m.to === selectedRecipient)}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <View style={styles.messageItem}>
-              <Text>{item.from}: {item.content}</Text>
-              {item.file && (
-                <Text style={styles.fileLink} onPress={() => {
-                  // Abrir enlace o visor de archivos
-                  Alert.alert('Archivo adjunto', item.file);
-                }}>
-                  (Archivo adjunto)
-                </Text>
-              )}
-            </View>
+            <Text style={styles.messageItem}>
+              {item.content} {item.file && `(Adjunto: ${item.file})`}
+            </Text>
           )}
         />
         <TextInput
@@ -148,11 +83,10 @@ const ChatScreen = ({ route }) => {
           value={message}
           onChangeText={setMessage}
           style={styles.input}
-          editable={!uploading}
         />
         <View style={styles.buttonRow}>
-          <Button title="Adjuntar archivo" onPress={handlePickFile} disabled={uploading} />
-          <Button title={uploading ? "Subiendo..." : "Enviar"} onPress={handleSendMessage} disabled={uploading} />
+          <Button title="Adjuntar archivo" onPress={handlePickFile} />
+          <Button title="Enviar" onPress={handleSendMessage} />
         </View>
       </View>
     </View>
@@ -168,7 +102,6 @@ const styles = StyleSheet.create({
   recipientItem: { padding: 10 },
   selected: { backgroundColor: '#cce5ff' },
   messageItem: { paddingVertical: 5 },
-  fileLink: { color: 'blue', textDecorationLine: 'underline' },
   input: { borderWidth: 1, padding: 8, marginVertical: 10 },
   buttonRow: { flexDirection: 'row', justifyContent: 'space-between' },
 });
